@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade ".[dev]"
+
+      - name: ruff check (CI check only — no --fix)
+        run: ruff check .
+
+      - name: mypy --strict
+        run: mypy --strict programs.py tools.py providers.py support_demo.py tests/
+
+      - name: smoke-import
+        run: |
+          python -c "import programs; import tools; import providers; import support_demo"
+          python -c "from programs import build_program; from nano_vm.validator import ProgramValidator; r = ProgramValidator(build_program()).validate(); assert r.is_valid(), r.summary()"
+
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+          cache-dependency-path: pyproject.toml
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade ".[dev]"
+
+      - name: pytest
+        run: pytest tests/ -v
+
+      - name: CLI smoke run (--all scenarios)
+        run: python support_demo.py --all
